@@ -34,6 +34,7 @@ class TCXParser(object):
             self.location = Location(root)
             self.altitude = Altitude(root)
             self.pace = Pace(self.time, self.distance)
+            self.device = self.get_device_info(root)
 
     def get_root(self, tcx_file):
         if not tcx_file is None:
@@ -45,6 +46,13 @@ class TCXParser(object):
                 if not root is None:
                     return root.xpath('./ns:Activities/ns:Activity',
                                       namespaces=NS)[0]
+
+    def get_device_info(self, root):
+        device = root.xpath('./ns:Creator/ns:Name', namespaces=NS)[0].text
+        t = root.xpath('./ns:Creator/ns:Version', namespaces=NS)[0]
+        version = ('v' + t.xpath('./ns:VersionMajor', namespaces=NS)[0].text
+                   + '.' + t.xpath('./ns:VersionMinor', namespaces=NS)[0].text)
+        return device, version
 
 
 class Measure(metaclass=ABCMeta):
@@ -78,25 +86,66 @@ class Measure(metaclass=ABCMeta):
 
 class Time(Measure):
     def __init__(self, root):
-        self.data = self.get_data(root)
+        self.data, abs_time = self.get_data(root)
+        self.absolute = AbsTime(abs_time)
 
     def get_data(self, root):
         if len(root.findall('./ns:Lap/ns:Track/ns:Trackpoint/ns:Time',
                             namespaces=NS)):
-            data = []
+            raw = []
             for lap in root.xpath('./ns:Lap', namespaces=NS):
                 for trkpt in lap.xpath('./ns:Track/ns:Trackpoint',
                                        namespaces=NS):
                     try:
-                        data.append(datetime.strptime(str(trkpt.xpath(
+                        raw.append(datetime.strptime(str(trkpt.xpath(
                             './ns:Time', namespaces=NS)[0].text),
                             '%Y-%m-%dT%H:%M:%S.%fZ'))
                     except IndexError:
-                        data.append(data[-1])
-            return data
+                        raw.append(data[-1])
+            data = [x - raw[0] for x in raw]
+            return data, raw
 
     def __repr__(self):
-        return repr([str(x) for x in self.data])
+        return repr([repr(x) for x in self.data])
+
+    def __str__(self):
+        return str([str(x) for x in self.data])
+
+    @property
+    def duration(self):
+        if self.data:
+            return self.data[-1]
+
+    @property
+    def start(self):
+        if self.data:
+            return self.time_raw[0]
+
+    @property
+    def finish(self):
+        if self.data:
+            return self.time_raw[-1]
+
+
+class AbsTime(Measure):
+    def __init__(self, abs_time):
+        self.data = abs_time
+
+    def __repr__(self):
+        return repr([repr(x) for x in self.data])
+
+    def __str__(self):
+        return str([str(x) for x in self.data])
+
+    @property
+    def start(self):
+        if self.data:
+            return self.data[0]
+
+    @property
+    def finish(self):
+        if self.data:
+            return self.data[-1]
 
 
 class HeartRate(Measure):
@@ -115,7 +164,7 @@ class HeartRate(Measure):
             return max(self.data)
 
     @property
-    def mean(self):
+    def average(self):
         if self.data:
             return sum(self.data) / len(self.data)
 
@@ -158,7 +207,7 @@ class Speed(Measure):
             return max(self.data)
 
     @property
-    def mean(self):
+    def average(self):
         if self.data:
             return sum(self.data) / len(self.data)
 
@@ -169,17 +218,17 @@ class Cadence(Measure):
         self.data = self.get_data(root, var)
 
     @property
-    def max(self):
-        if self.data:
-            return max(self.data)
-
-    @property
     def min(self):
         if self.data:
             return min(self.data)
 
     @property
-    def mean(self):
+    def max(self):
+        if self.data:
+            return max(self.data)
+
+    @property
+    def average(self):
         if self.data:
             return sum(self.data) / len(self.data)
 
@@ -241,12 +290,12 @@ class Altitude(Measure):
             return max(self.data)
 
     @property
-    def mean(self):
+    def average(self):
         if self.data:
             return sum(self.data) / len(self.data)
 
     @property
-    def delta(self):
+    def change(self):
         if self.data:
             alt_delta = []
             for i, val in enumerate(self.data):
@@ -288,6 +337,6 @@ class Pace(Measure):
             return min(li)
 
     @property
-    def mean(self):
+    def average(self):
         if self.data:
             return self.data[-1]
