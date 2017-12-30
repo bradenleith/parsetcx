@@ -119,12 +119,12 @@ class Time(Measure):
     @property
     def start(self):
         if self.data:
-            return self.time_raw[0]
+            return self.absolute[0]
 
     @property
     def finish(self):
         if self.data:
-            return self.time_raw[-1]
+            return self.absolute[-1]
 
 
 class AbsTime(Measure):
